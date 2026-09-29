@@ -1,120 +1,84 @@
 # pi-linger
 
-A calmer way to read [Pi](https://github.com/badlogic/pi-mono) while it works.
+让 [Pi](https://github.com/badlogic/pi-mono) 工作时更清爽、更容易跟进。
 
-[简体中文](README.zh-CN.md)
+**pi-linger** 保留对话内容和 `Working...` 状态，同时把工具执行噪音和可选的思考内容安静地收起来。工具行在整轮 agent run 期间保持显示，等到这一轮 run 结束才收起。它只改变终端展示，不会改变工具执行、模型上下文或 session 数据。
 
-**pi-linger** keeps the conversation and Pi's `Working...` status easy to follow,
-while quietly tucking away tool chatter and optional thinking. Tool rows stay
-visible for the whole agent run and collapse only once the run is over. It
-changes only what you see in the terminal — tool execution, model context, and
-session data stay untouched.
+> Fork 自 Jesse Zhang 的 [pi-calm](https://github.com/JesseZhang97/pi-calm)（pi-calm 又源自 Firstmate 的 `/calm` 扩展）。主要行为差异是：工具行在**整轮 agent run 结束**时才隐藏，而不是某个工具调用一结束就隐藏。详见[与 pi-calm 的差异](#与-pi-calm-的差异)。
 
-> Forked from [pi-calm](https://github.com/JesseZhang97/pi-calm) by Jesse Zhang
-> (itself ported from Firstmate's `/calm` extension). The main behavioral change
-> is that tool rows hide at the end of a whole agent run instead of the moment
-> each individual tool call returns. See [Changes from pi-calm](#changes-from-pi-calm).
+## 保留什么，隐藏什么
 
-## What stays visible
+Linger **默认开启**：
 
-Linger is **on by default**:
-
-| Stays visible | Quietly hidden (presentation only) |
+| 保留显示 | 收起（仅展示层） |
 | --- | --- |
-| Genuine user prompts | Thinking / CoT blocks (unless `/linger thinking`) |
-| Genuine assistant text | Tool rows (built-in and user-defined) — after the run ends |
-| Pi's native `Working...` row (always on, cannot be disabled) | Operational user rows marked with `U+2063` envelopes |
+| 用户真实提示 | 思考 / CoT 区块（`/linger thinking` 可显示） |
+| 助手真实文本 | 工具行（内置工具和自定义 custom tools）—— run 结束后 |
+| Pi 原生 `Working...` 行（始终开启，无法关闭） | 带 `U+2063` envelope 的操作型用户行 |
 
-Tool rows are **not** hidden while Pi is working: arguments streaming, running
-calls, partial output, and finished calls all stay on screen for the entire
-agent run. When the run ends (the final answer is in), every tool row from that
-run collapses to zero height, and stays collapsed for the rest of the session.
+Pi 工作期间工具行**不会**隐藏：参数流式输出、执行中的调用、部分结果、已结束的调用，在整轮 agent run 期间都留在屏幕上。当这一轮 run 结束（最终回答产出）后，本轮的所有工具行才收起为零高度，并在本 session 内保持收起。
 
-Hidden content remains in the session and comes back when you turn Linger off.
-`/export` and `/share` briefly restore Pi's normal rendering so exported content
-remains complete.
+隐藏内容仍会保存在 session 中，关闭 Linger 后会恢复显示。`/export` 和 `/share` 序列化时会临时恢复标准展示，保证导出内容完整。
 
-## Changes from pi-calm
+## 与 pi-calm 的差异
 
-- Tool rows are hidden per **agent run**, not per tool call. A run is one prompt
-  through the whole model/tool loop until the final answer; `agent_start` opens
-  the window and `agent_end` closes it (automatic retries keep it open).
-- Rows are latched once hidden, so tool rows from earlier runs never reappear
-  when a new run starts.
-- Legacy `U+2063CALM_HIDE:` operational markers from old pi-calm sessions are
-  still recognized.
+- 工具行按**整轮 agent run**隐藏，而不是按单次工具调用。一轮 run 指一次提示经过完整的「模型 / 工具」循环直到最终回答；`agent_start` 打开显示窗口，`agent_end` 关闭它（自动重试期间保持打开）。
+- 收起后会被锁定，因此新一轮 run 开始时，之前 run 的工具行不会重新出现。
+- 仍然识别旧 pi-calm session 中的 `U+2063CALM_HIDE:` 操作型标记。
 
-## Install
-
-### GitHub
+## 安装
 
 ```sh
 pi install git:github.com/sg8010/pi-linger
 ```
 
-### npm
+本包包含 `pi-package` keyword 和 `pi` manifest，可以被 Pi package gallery 发现。
 
-```sh
-pi install npm:pi-linger
-```
+安装后重启 Pi，或执行 `/reload`。
 
-### Local path
-
-```sh
-pi install /path/to/pi-linger
-```
-
-This package declares the `pi-package` keyword and a `pi` manifest, so Pi's
-package gallery can discover it.
-
-After installing, restart Pi or run `/reload`.
-
-## Usage
+## 使用
 
 ```text
-/linger on              # Linger on, thinking hidden
-/linger thinking        # Keep Linger on, toggle thinking / CoT
-/linger off             # Linger off, ordinary transcript restored
+/linger on              # 开启 Linger，隐藏思考
+/linger thinking        # 保持 Linger，切换思考 / CoT
+/linger off             # 关闭 Linger，恢复普通 transcript
 ```
 
-Those are the only three commands. Typing `/linger ` offers argument completion.
+只有这三个命令。输入 `/linger ` 后，Pi 会提供参数补全。
 
-`Working...` always stays visible and cannot be disabled while the extension is
-loaded.
+`Working...` 始终保持显示，扩展加载后不能被关闭。
 
-## Preferences
+## 偏好设置
 
-Saved by default at:
+默认保存于：
 
 ```text
 ~/.pi/agent/linger
 ```
 
-| File contents | Meaning |
+| 文件内容 | 含义 |
 | --- | --- |
-| `on` | Linger on, thinking hidden (default) |
-| `on thinking` | Linger on, thinking / CoT shown |
-| `off` | Linger off |
+| `on` | Linger 开启，隐藏思考（默认） |
+| `on thinking` | Linger 开启，显示思考 / CoT |
+| `off` | Linger 关闭 |
 
-Override the path with `PI_LINGER_PREFERENCE_PATH`.
+可通过 `PI_LINGER_PREFERENCE_PATH` 覆盖保存路径。
 
-## Presentation scope
+## 展示范围
 
-Linger uses Pi's presentation seams:
+Linger 使用 Pi 的展示层 seam：
 
-- Every `ToolExecutionComponent` row is targeted, including any third-party
-  custom tool.
-- Custom messages and custom entries still show.
-- Compaction / branch summaries still show.
-- `!` / `!!` user bash rows still show.
-- `/export` and `/share` temporarily restore stock rendering for serialization.
+- 所有 `ToolExecutionComponent` 工具行都会被接管，包括任意第三方 custom tools
+- custom messages 和 custom entries 仍然显示
+- compaction / branch summary 仍然显示
+- `!` / `!!` 用户 bash 行仍然显示
+- `/export` 和 `/share` 序列化时会临时恢复标准展示
 
-Hiding is presentation-only; session data is never deleted.
+隐藏只影响终端展示，不会删除 session 数据。
 
-## Development
+## 开发
 
-This is a Pi extension package; there is no build step. Point Pi at the package
-and reload:
+这是一个 Pi extension 包，没有构建步骤。直接用 Pi 指向它并重载：
 
 ```sh
 pi -e ./extensions/linger/index.ts
@@ -122,4 +86,4 @@ pi -e ./extensions/linger/index.ts
 
 ## License
 
-MIT. See [LICENSE](LICENSE). Original work Copyright (c) 2025 Jesse Zhang.
+MIT，见 [LICENSE](LICENSE)。原始作品版权归 Jesse Zhang (c) 2025 所有。
