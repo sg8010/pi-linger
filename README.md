@@ -39,9 +39,9 @@ pi install git:github.com/sg8010/pi-linger
 ## 使用
 
 ```text
-/linger on              # 开启 Linger，隐藏思考
-/linger thinking        # 保持 Linger，切换思考 / CoT
-/linger off             # 关闭 Linger，恢复普通 transcript
+/linger on              # Linger 开启，隐藏思考（默认）
+/linger thinking        # Linger 开启，显示思考 / CoT
+/linger off             # Linger 关闭
 ```
 
 只有这三个命令。输入 `/linger ` 后，Pi 会提供参数补全。
