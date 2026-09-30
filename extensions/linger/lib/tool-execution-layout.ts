@@ -10,7 +10,8 @@
  * streaming, executing, partial output, and finished calls) and collapses the
  * rows to zero height only once that run is over. A row that has been hidden
  * stays hidden, so tool rows from earlier runs never reappear when a new run
- * starts.
+ * starts. When the user aborts a run the window stays open (see index.ts), so
+ * the interrupted rows remain visible until the next normal run ends.
  *
  * Presentation only. Execution, results, and session storage are unchanged.
  */

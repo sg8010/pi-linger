@@ -85,6 +85,25 @@ function describeLingerState(preference: LingerPreference): string {
   return "Linger on — tools and thinking hidden";
 }
 
+/**
+ * True when the run that just ended was stopped by the user rather than
+ * finishing on its own. Pi marks the final assistant message's stopReason as
+ * "aborted" for manual aborts (tool rows get an "Operation aborted" error), so
+ * we look at the last assistant message in the run's transcript.
+ */
+function agentEndWasAborted(event: { messages?: unknown }): boolean {
+  const messages = event.messages;
+  if (!Array.isArray(messages)) return false;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index] as
+      | { role?: unknown; stopReason?: unknown }
+      | undefined;
+    if (!message || message.role !== "assistant") continue;
+    return message.stopReason === "aborted";
+  }
+  return false;
+}
+
 const LINGER_COMMAND_ARGUMENTS: AutocompleteItem[] = [
   {
     value: "on",
@@ -256,6 +275,14 @@ export default function (pi: ExtensionAPI) {
   pi.on("agent_end", (event, ctx) => {
     // An automatic retry continues the same logical run. Wait for the real end.
     if ((event as { willRetry?: boolean }).willRetry === true) return;
+    // A manual abort ends the run without finishing it. Keep the visibility
+    // window open so the interrupted tool rows stay on screen for inspection;
+    // the next normal run's agent_end closes the window and collapses them.
+    if (agentEndWasAborted(event)) {
+      setAgentRunActive(true);
+      ctx.ui.setWorkingVisible(true);
+      return;
+    }
     setAgentRunActive(false);
     // Rebuild tool rows so everything finished during this run collapses now.
     const expanded = ctx.ui.getToolsExpanded();
