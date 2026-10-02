@@ -35,6 +35,21 @@ type LingerToolExecutionLayoutPatch = {
 const LINGER_TOOL_EXECUTION_LAYOUT_PATCH = Symbol.for(
   "pi-linger:tool-execution-layout:pi-0.81.1",
 );
+const LINGER_TOOL_EXECUTION_LAYOUT_ORIGINAL_RENDER = Symbol.for(
+  "pi-linger:tool-execution-layout:original-render:pi-0.81.1",
+);
+
+type ToolRenderFn = (
+  this: ToolExecutionPresentation,
+  width: number,
+) => string[];
+
+type LingerToolExecutionLayoutRegistry = {
+  [key: symbol]:
+    | LingerToolExecutionLayoutPatch
+    | ToolRenderFn
+    | undefined;
+};
 
 /**
  * A tool row counts as finished only once Pi marks its result final
@@ -63,18 +78,11 @@ function shouldHideToolRow(component: ToolExecutionPresentation): boolean {
 }
 
 export function installLingerToolExecutionLayout(): void {
-  const registry = globalThis as typeof globalThis & {
-    [key: symbol]: LingerToolExecutionLayoutPatch | undefined;
-  };
+  const registry = globalThis as typeof globalThis &
+    LingerToolExecutionLayoutRegistry;
   const hidesTools = (): boolean =>
     lingerPresentationHides("assistant-tool-call");
-  const installed = registry[LINGER_TOOL_EXECUTION_LAYOUT_PATCH];
-  if (installed) {
-    installed.hidesTools = hidesTools;
-    return;
-  }
 
-  const patch: LingerToolExecutionLayoutPatch = { hidesTools };
   const ToolExecutionComponent = (
     PiCodingAgent as typeof PiCodingAgent & {
       ToolExecutionComponent?: new (...args: never[]) => ToolExecutionPresentation;
@@ -85,17 +93,36 @@ export function installLingerToolExecutionLayout(): void {
   }
 
   const prototype = ToolExecutionComponent.prototype as ToolExecutionPresentation;
-  const originalRender = prototype.render;
-  if (typeof originalRender !== "function") {
+  if (typeof prototype.render !== "function") {
     throw new Error("pi-linger requires Pi ToolExecutionComponent.render");
   }
 
-  prototype.render = function (this: ToolExecutionPresentation, width: number): string[] {
+  // Capture Pi's real render exactly once. `/reload` re-imports this module, so
+  // the "original" must never become a previous linger wrapper.
+  if (
+    typeof registry[LINGER_TOOL_EXECUTION_LAYOUT_ORIGINAL_RENDER] !== "function"
+  ) {
+    registry[LINGER_TOOL_EXECUTION_LAYOUT_ORIGINAL_RENDER] =
+      prototype.render as ToolRenderFn;
+  }
+  const originalRender = registry[
+    LINGER_TOOL_EXECUTION_LAYOUT_ORIGINAL_RENDER
+  ] as ToolRenderFn;
+
+  const patch: LingerToolExecutionLayoutPatch = { hidesTools };
+  registry[LINGER_TOOL_EXECUTION_LAYOUT_PATCH] = patch;
+
+  // Always rebind. After `/reload` a new module instance owns the live
+  // visibility state, so the wrapper must close over this import's
+  // `shouldHideToolRow` / `agentRunIsActive` instead of a stale one. The
+  // captured original keeps repeated installs from stacking wrappers.
+  prototype.render = function (
+    this: ToolExecutionPresentation,
+    width: number,
+  ): string[] {
     if (patch.hidesTools() && shouldHideToolRow(this)) {
       return [];
     }
     return originalRender.call(this, width);
   };
-
-  registry[LINGER_TOOL_EXECUTION_LAYOUT_PATCH] = patch;
 }
