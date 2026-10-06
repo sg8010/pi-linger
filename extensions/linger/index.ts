@@ -29,7 +29,7 @@
  *   /linger thinking     Linger on, toggle thinking / CoT
  *   /linger off          Linger off
  *
- * Verified against Pi 0.81.1–0.87.1. Adapters probe the exact APIs they patch
+ * Verified against Pi 0.81.1–1.0.4. Adapters probe the exact APIs they patch
  * and degrade independently if a future Pi removes a seam.
  */
 import { randomUUID } from "node:crypto";
@@ -86,20 +86,33 @@ function describeLingerState(preference: LingerPreference): string {
 }
 
 /**
- * True when the run that just ended was stopped by the user rather than
- * finishing on its own. Pi marks the final assistant message's stopReason as
- * "aborted" for manual aborts (tool rows get an "Operation aborted" error), so
- * we look at the last assistant message in the run's transcript.
+ * Pi reports a user-stopped run in more than one shape:
+ *   - abort while the model is streaming marks the final assistant message
+ *     with stopReason "aborted";
+ *   - abort while a tool call is executing instead finishes the tool with an
+ *     "Operation aborted" / "Command aborted" error result and lets the next
+ *     model call fail, so the final assistant message is stopReason "error"
+ *     with an abort-ish errorMessage (for example "This operation was
+ *     aborted").
+ * Match both so a manual abort keeps the interrupted rows on screen in either
+ * case. Mirrors Pi's own abort classification for error messages.
  */
+const ABORT_ERROR_MESSAGE_PATTERN = /\b(?:abort(?:ed)?|cancel(?:l?ed)?)\b/i;
+
 function agentEndWasAborted(event: { messages?: unknown }): boolean {
   const messages = event.messages;
   if (!Array.isArray(messages)) return false;
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index] as
-      | { role?: unknown; stopReason?: unknown }
+      | { role?: unknown; stopReason?: unknown; errorMessage?: unknown }
       | undefined;
     if (!message || message.role !== "assistant") continue;
-    return message.stopReason === "aborted";
+    if (message.stopReason === "aborted") return true;
+    return (
+      message.stopReason === "error" &&
+      typeof message.errorMessage === "string" &&
+      ABORT_ERROR_MESSAGE_PATTERN.test(message.errorMessage)
+    );
   }
   return false;
 }
@@ -267,18 +280,31 @@ export default function (pi: ExtensionAPI) {
     });
   });
 
+  let runWasAborted = false;
+
   // Tool rows stay visible for the whole run; hide them only when it is over.
   pi.on("agent_start", () => {
+    runWasAborted = false;
     setAgentRunActive(true);
   });
 
+  // agent_end marks the end of one low-level model/tool run, but Pi may still
+  // follow it with an automatic retry, overflow compaction, or a queued
+  // continuation. Keep the window open here and close it at agent_settled,
+  // which only fires once nothing automatic will run. Pi's agent_end extension
+  // event has no willRetry flag, so this is the only reliable seam.
   pi.on("agent_end", (event, ctx) => {
-    // An automatic retry continues the same logical run. Wait for the real end.
-    if ((event as { willRetry?: boolean }).willRetry === true) return;
-    // A manual abort ends the run without finishing it. Keep the visibility
-    // window open so the interrupted tool rows stay on screen for inspection;
-    // the next normal run's agent_end closes the window and collapses them.
-    if (agentEndWasAborted(event)) {
+    // A manual abort ends the run without finishing it. Remember it so the
+    // interrupted rows stay on screen when the run settles, instead of
+    // collapsing while the user inspects what happened.
+    runWasAborted = agentEndWasAborted(event);
+    setAgentRunActive(true);
+    ctx.ui.setWorkingVisible(true);
+  });
+
+  pi.on("agent_settled", (_event, ctx) => {
+    if (runWasAborted) {
+      // Keep the interrupted rows until the next normal run ends.
       setAgentRunActive(true);
       ctx.ui.setWorkingVisible(true);
       return;
